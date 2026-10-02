@@ -1,0 +1,10 @@
+name: CiaoSMP-MaceCustom
+version: 1.0.0
+main: com.ciaosmp.macecustom.MaceCustomPlugin
+api-version: '1.20'
+description: Masses personnalisees pour CiaoSMP
+commands:
+  givemace:
+    description: Give custom maces
+    permission: ciaosmp.macecustom.admin
+    usage: /givemace <lave|glace|god> [joueur]
