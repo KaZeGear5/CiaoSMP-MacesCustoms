@@ -17,13 +17,13 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.enchantment.PrepareItemEnchantEvent; // <-- Correction de l'import ici
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.event.inventory.PrepareAnvilEvent;
-import org.bukkit.event.inventory.PrepareItemEnchantEvent;
-import org.bukkit.event.inventory.PrepareSmithingEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.event.inventory.PrepareSmithingEvent;
 import org.bukkit.inventory.AnvilInventory;
 import org.bukkit.inventory.GrindstoneInventory;
 import org.bukkit.inventory.ItemStack;
@@ -44,7 +44,6 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
     private NamespacedKey maceKey;
     private final MiniMessage mm = MiniMessage.miniMessage();
 
-    // UUID unique pour l'effet de santé bonus dans l'inventaire
     private static final UUID INV_HEALTH_UUID = UUID.fromString("a1b2c3d4-e5f6-7890-1234-56789abcdef0");
 
     @Override
@@ -56,7 +55,7 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
             getCommand("givemace").setExecutor(this);
         }
 
-        // Tâche répétée toutes les 10 ticks (0.5s) pour vérifier la présence des masses dans l'inventaire
+        // Tâche répétée toutes les 0.5s pour vérifier la présence des masses dans l'inventaire
         Bukkit.getScheduler().runTaskTimer(this, this::checkInventoriesForHealthBoost, 20L, 10L);
     }
 
@@ -65,25 +64,23 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         ItemMeta meta = mace.getItemMeta();
         if (meta == null) return mace;
 
-        // Rendre l'arme incassable
         meta.setUnbreakable(true);
 
-        // Enchantements fixes : Density 3 + Breach 2
         meta.addEnchant(Enchantment.DENSITY, 3, true);
         meta.addEnchant(Enchantment.BREACH, 2, true);
 
         if (type.equalsIgnoreCase("lave")) {
             meta.displayName(mm.deserialize("<bold><gradient:#FF0000:#FF7700>Masse de Lave</gradient></bold>"));
             meta.getPersistentDataContainer().set(maceKey, PersistentDataType.STRING, "lave");
-            meta.setCustomModelData(1001); // ID pour la texture perso
+            meta.setCustomModelData(1001);
         } else if (type.equalsIgnoreCase("glace")) {
             meta.displayName(mm.deserialize("<bold><gradient:#00FFFF:#0088FF>Masse de Glace</gradient></bold>"));
             meta.getPersistentDataContainer().set(maceKey, PersistentDataType.STRING, "glace");
-            meta.setCustomModelData(1002); // ID pour la texture perso
+            meta.setCustomModelData(1002);
         } else if (type.equalsIgnoreCase("god")) {
             meta.displayName(mm.deserialize("<bold><gradient:#FFFF00:#FFFFFF>Masse Divine</gradient></bold>"));
             meta.getPersistentDataContainer().set(maceKey, PersistentDataType.STRING, "god");
-            meta.setCustomModelData(1003); // ID pour la texture perso
+            meta.setCustomModelData(1003);
         }
 
         mace.setItemMeta(meta);
@@ -101,10 +98,6 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         return item.getItemMeta().getPersistentDataContainer().get(maceKey, PersistentDataType.STRING);
     }
 
-    /**
-     * Vérifie si le joueur possède une Masse de Lave ou de Glace dans son inventaire
-     * et lui accorde +3 cœurs (+6 HP).
-     */
     private void checkInventoriesForHealthBoost() {
         for (Player p : Bukkit.getOnlinePlayers()) {
             boolean hasMace = false;
@@ -173,7 +166,6 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
                     living.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 255, false, false));
                     living.addPotionEffect(new PotionEffect(PotionEffectType.JUMP_BOOST, 20, 200, false, false));
                 }
-                // 10% de chance de faire tomber un éclair
                 if (ThreadLocalRandom.current().nextInt(100) < 10) {
                     target.getWorld().strikeLightning(target.getLocation());
                 }
@@ -203,27 +195,25 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         }
     }
 
-    // --- SÉCURITÉ : Empêcher la modification des enchantements et la réparation ---
-
     @EventHandler
     public void onAnvilPrepare(PrepareAnvilEvent event) {
         AnvilInventory inv = event.getInventory();
         if (isCustomMace(inv.getItem(0)) || isCustomMace(inv.getItem(1))) {
-            event.setResult(null); // Bloque l'enclume
+            event.setResult(null);
         }
     }
 
     @EventHandler
     public void onEnchantPrepare(PrepareItemEnchantEvent event) {
         if (isCustomMace(event.getItem())) {
-            event.setCancelled(true); // Bloque la table d'enchantement
+            event.setCancelled(true);
         }
     }
 
     @EventHandler
     public void onSmithingPrepare(PrepareSmithingEvent event) {
         if (isCustomMace(event.getInventory().getItem(0)) || isCustomMace(event.getInventory().getItem(1))) {
-            event.setResult(null); // Bloque la table de forge
+            event.setResult(null);
         }
     }
 
@@ -235,14 +225,12 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         if (type == InventoryType.GRINDSTONE) {
             GrindstoneInventory grindstone = (GrindstoneInventory) event.getInventory();
             if (isCustomMace(grindstone.getItem(0)) || isCustomMace(grindstone.getItem(1))) {
-                if (event.getSlot() == 2) { // Slot de résultat de la meule
-                    event.setCancelled(true); // Bloque le désenchantement
+                if (event.getSlot() == 2) {
+                    event.setCancelled(true);
                 }
             }
         }
     }
-
-    // --- COMMANDE GIVE ---
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
