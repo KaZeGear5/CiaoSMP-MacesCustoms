@@ -1,12 +1,12 @@
 package com.ciaosmp.macecustom;
 
 import net.kyori.adventure.text.minimessage.MiniMessage;
+import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
-import org.bukkit.ban.ProfileBanList;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -18,7 +18,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.inventory.EquipmentSlotGroup;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -29,18 +29,17 @@ import org.bukkit.potion.PotionEffectType;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class MaceCustomPlugin extends JavaPlugin implements Listener, CommandExecutor {
 
     private NamespacedKey maceKey;
-    private NamespacedKey healthKey;
     private final MiniMessage mm = MiniMessage.miniMessage();
 
     @Override
     public void onEnable() {
         this.maceKey = new NamespacedKey(this, "mace_type");
-        this.healthKey = new NamespacedKey(this, "mace_health");
 
         getServer().getPluginManager().registerEvents(this, this);
         if (getCommand("givemace") != null) {
@@ -77,10 +76,11 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
 
     private void addHealthModifier(ItemMeta meta) {
         AttributeModifier modifier = new AttributeModifier(
-                healthKey,
+                UUID.fromString("d8f31b2e-0000-4000-8000-000000000001"),
+                "mace_health",
                 6.0, // +6 HP = +3 cœurs
                 AttributeModifier.Operation.ADD_NUMBER,
-                EquipmentSlotGroup.MAINHAND
+                EquipmentSlot.HAND
         );
         meta.addAttributeModifier(Attribute.GENERIC_MAX_HEALTH, modifier);
     }
@@ -134,8 +134,8 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
 
         if ("god".equals(type)) {
             Date expires = Date.from(Instant.now().plus(15, ChronoUnit.MINUTES));
-            Bukkit.getBanList(ProfileBanList.Type.PROFILE).addBan(
-                    victim.getPlayerProfile(),
+            Bukkit.getBanList(BanList.Type.NAME).addBan(
+                    victim.getName(),
                     "Tu as été éliminé par la Masse Divine ! (Ban 15 min)",
                     expires,
                     "GodMace"
