@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -18,7 +19,13 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
-import org.bukkit.inventory.EquipmentSlot;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
+import org.bukkit.event.inventory.PrepareItemEnchantEvent;
+import org.bukkit.event.inventory.PrepareSmithingEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.inventory.AnvilInventory;
+import org.bukkit.inventory.GrindstoneInventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -37,6 +44,9 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
     private NamespacedKey maceKey;
     private final MiniMessage mm = MiniMessage.miniMessage();
 
+    // UUID unique pour l'effet de santé bonus dans l'inventaire
+    private static final UUID INV_HEALTH_UUID = UUID.fromString("a1b2c3d4-e5f6-7890-1234-56789abcdef0");
+
     @Override
     public void onEnable() {
         this.maceKey = new NamespacedKey(this, "mace_type");
@@ -45,6 +55,9 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         if (getCommand("givemace") != null) {
             getCommand("givemace").setExecutor(this);
         }
+
+        // Tâche répétée toutes les 10 ticks (0.5s) pour vérifier la présence des masses dans l'inventaire
+        Bukkit.getScheduler().runTaskTimer(this, this::checkInventoriesForHealthBoost, 20L, 10L);
     }
 
     public ItemStack createMace(String type) {
@@ -52,37 +65,88 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         ItemMeta meta = mace.getItemMeta();
         if (meta == null) return mace;
 
+        // Rendre l'arme incassable
         meta.setUnbreakable(true);
+
+        // Enchantements fixes : Density 3 + Breach 2
+        meta.addEnchant(Enchantment.DENSITY, 3, true);
+        meta.addEnchant(Enchantment.BREACH, 2, true);
 
         if (type.equalsIgnoreCase("lave")) {
             meta.displayName(mm.deserialize("<bold><gradient:#FF0000:#FF7700>Masse de Lave</gradient></bold>"));
             meta.getPersistentDataContainer().set(maceKey, PersistentDataType.STRING, "lave");
-            meta.addEnchant(Enchantment.DENSITY, 6, true);
-            addHealthModifier(meta);
+            meta.setCustomModelData(1001); // ID pour la texture perso
         } else if (type.equalsIgnoreCase("glace")) {
             meta.displayName(mm.deserialize("<bold><gradient:#00FFFF:#0088FF>Masse de Glace</gradient></bold>"));
             meta.getPersistentDataContainer().set(maceKey, PersistentDataType.STRING, "glace");
-            meta.addEnchant(Enchantment.DENSITY, 6, true);
-            addHealthModifier(meta);
+            meta.setCustomModelData(1002); // ID pour la texture perso
         } else if (type.equalsIgnoreCase("god")) {
             meta.displayName(mm.deserialize("<bold><gradient:#FFFF00:#FFFFFF>Masse Divine</gradient></bold>"));
             meta.getPersistentDataContainer().set(maceKey, PersistentDataType.STRING, "god");
-            meta.addEnchant(Enchantment.DENSITY, 7, true);
+            meta.setCustomModelData(1003); // ID pour la texture perso
         }
 
         mace.setItemMeta(meta);
         return mace;
     }
 
-    private void addHealthModifier(ItemMeta meta) {
-        AttributeModifier modifier = new AttributeModifier(
-                UUID.fromString("d8f31b2e-0000-4000-8000-000000000001"),
-                "mace_health",
-                6.0, // +6 HP = +3 cœurs
-                AttributeModifier.Operation.ADD_NUMBER,
-                EquipmentSlot.HAND
-        );
-        meta.addAttributeModifier(Attribute.GENERIC_MAX_HEALTH, modifier);
+    private boolean isCustomMace(ItemStack item) {
+        if (item == null || item.getType() != Material.MACE || !item.hasItemMeta()) return false;
+        ItemMeta meta = item.getItemMeta();
+        return meta.getPersistentDataContainer().has(maceKey, PersistentDataType.STRING);
+    }
+
+    private String getMaceType(ItemStack item) {
+        if (!isCustomMace(item)) return null;
+        return item.getItemMeta().getPersistentDataContainer().get(maceKey, PersistentDataType.STRING);
+    }
+
+    /**
+     * Vérifie si le joueur possède une Masse de Lave ou de Glace dans son inventaire
+     * et lui accorde +3 cœurs (+6 HP).
+     */
+    private void checkInventoriesForHealthBoost() {
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            boolean hasMace = false;
+
+            for (ItemStack item : p.getInventory().getContents()) {
+                String maceType = getMaceType(item);
+                if ("lave".equals(maceType) || "glace".equals(maceType)) {
+                    hasMace = true;
+                    break;
+                }
+            }
+
+            AttributeInstance attr = p.getAttribute(Attribute.GENERIC_MAX_HEALTH);
+            if (attr == null) continue;
+
+            AttributeModifier existingMod = null;
+            for (AttributeModifier mod : attr.getModifiers()) {
+                if (mod.getUniqueId().equals(INV_HEALTH_UUID)) {
+                    existingMod = mod;
+                    break;
+                }
+            }
+
+            if (hasMace) {
+                if (existingMod == null) {
+                    AttributeModifier newMod = new AttributeModifier(
+                            INV_HEALTH_UUID,
+                            "mace_inv_health",
+                            6.0, // +6 HP = +3 cœurs
+                            AttributeModifier.Operation.ADD_NUMBER
+                    );
+                    attr.addModifier(newMod);
+                }
+            } else {
+                if (existingMod != null) {
+                    attr.removeModifier(existingMod);
+                    if (p.getHealth() > attr.getValue()) {
+                        p.setHealth(attr.getValue());
+                    }
+                }
+            }
+        }
     }
 
     @EventHandler
@@ -90,10 +154,7 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         if (!(event.getDamager() instanceof Player attacker)) return;
 
         ItemStack weapon = attacker.getInventory().getItemInMainHand();
-        if (weapon.getType() != Material.MACE || !weapon.hasItemMeta()) return;
-
-        ItemMeta meta = weapon.getItemMeta();
-        String type = meta.getPersistentDataContainer().get(maceKey, PersistentDataType.STRING);
+        String type = getMaceType(weapon);
         if (type == null) return;
 
         Entity target = event.getEntity();
@@ -112,7 +173,8 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
                     living.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 20, 255, false, false));
                     living.addPotionEffect(new PotionEffect(PotionEffectType.JUMP_BOOST, 20, 200, false, false));
                 }
-                if (ThreadLocalRandom.current().nextInt(100) < 30) {
+                // 10% de chance de faire tomber un éclair
+                if (ThreadLocalRandom.current().nextInt(100) < 10) {
                     target.getWorld().strikeLightning(target.getLocation());
                 }
             }
@@ -127,10 +189,7 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
         if (killer == null) return;
 
         ItemStack weapon = killer.getInventory().getItemInMainHand();
-        if (weapon.getType() != Material.MACE || !weapon.hasItemMeta()) return;
-
-        ItemMeta meta = weapon.getItemMeta();
-        String type = meta.getPersistentDataContainer().get(maceKey, PersistentDataType.STRING);
+        String type = getMaceType(weapon);
 
         if ("god".equals(type)) {
             Date expires = Date.from(Instant.now().plus(15, ChronoUnit.MINUTES));
@@ -143,6 +202,47 @@ public final class MaceCustomPlugin extends JavaPlugin implements Listener, Comm
             victim.kick(mm.deserialize("<red>Tu as été tué par la Masse Divine ! Banni 15 minutes.</red>"));
         }
     }
+
+    // --- SÉCURITÉ : Empêcher la modification des enchantements et la réparation ---
+
+    @EventHandler
+    public void onAnvilPrepare(PrepareAnvilEvent event) {
+        AnvilInventory inv = event.getInventory();
+        if (isCustomMace(inv.getItem(0)) || isCustomMace(inv.getItem(1))) {
+            event.setResult(null); // Bloque l'enclume
+        }
+    }
+
+    @EventHandler
+    public void onEnchantPrepare(PrepareItemEnchantEvent event) {
+        if (isCustomMace(event.getItem())) {
+            event.setCancelled(true); // Bloque la table d'enchantement
+        }
+    }
+
+    @EventHandler
+    public void onSmithingPrepare(PrepareSmithingEvent event) {
+        if (isCustomMace(event.getInventory().getItem(0)) || isCustomMace(event.getInventory().getItem(1))) {
+            event.setResult(null); // Bloque la table de forge
+        }
+    }
+
+    @EventHandler
+    public void onInventoryClick(InventoryClickEvent event) {
+        if (event.getClickedInventory() == null) return;
+
+        InventoryType type = event.getInventory().getType();
+        if (type == InventoryType.GRINDSTONE) {
+            GrindstoneInventory grindstone = (GrindstoneInventory) event.getInventory();
+            if (isCustomMace(grindstone.getItem(0)) || isCustomMace(grindstone.getItem(1))) {
+                if (event.getSlot() == 2) { // Slot de résultat de la meule
+                    event.setCancelled(true); // Bloque le désenchantement
+                }
+            }
+        }
+    }
+
+    // --- COMMANDE GIVE ---
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
